@@ -1,7 +1,7 @@
 (function () {
   "use strict";
   /* HotelRate reviewer dashboard. Frontend-only: everything lives in LocalStorage. */
-  const KEY = "hotelrate.dashboard.v1", LIMIT = 5, WD_MS = 120000, REVIEW_MS = 600000;
+  const KEY = "hotelrate.dashboard.v1", LIMIT = 5, WD_MS = 120000, REVIEW_MS = 300000;
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const $ = (s) => document.querySelector(s);
   const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
@@ -176,7 +176,7 @@
   function vOverview() {
     const w = wallet(), n = daily(), name = S.profile.name.trim();
     const stamps = Array.from({ length: LIMIT }, (_, i) => `<span class="stamp ${i < n ? "on" : ""}">${i < n ? '<svg viewBox="0 0 24 24"><path d="M5 12l5 5 9-10"/></svg>' : ""}</span>`).join("");
-    return `<div class="sec-h"><div><h2>${name ? "Welcome back, " + esc(name.split(" ")[0]) : "Welcome to HotelRate"}</h2><p class="hint">Rewards are shown in ${cur()} at $1 = ${cur()} ${num(rate())}.</p></div></div>
+    return `<div class="sec-h"><div><h2>${name ? "Welcome back, " + esc(name.split(" ")[0]) : "Welcome to HotelRate"}</h2></div></div>
     <div class="grid g4">
       ${statCard("Available balance", money(w.avail), "Ready to withdraw", "hero")}
       ${statCard("Total earnings", money(w.earned), "All review rewards")}
@@ -186,8 +186,8 @@
     <div class="grid g2" style="margin-top:16px">
       <div class="card"><header><h3>Today's review progress</h3><span class="pill">${n}/${LIMIT}</span></header>
         <div class="stamps" aria-hidden="true">${stamps}</div>
-        <p class="hint">${n >= LIMIT ? `Daily limit reached. New reviews open at midnight (${C().tzLabel} time).` : `${LIMIT - n} review${LIMIT - n === 1 ? "" : "s"} left today. Resets at midnight (${C().tzLabel} time).`}</p>
-        <p style="margin-top:12px"><a class="btn sm" href="#hotels" ${n >= LIMIT ? 'aria-disabled="true"' : ""}>Review a hotel</a> <span class="hint">&nbsp;${verified()} hotel${verified() === 1 ? "" : "s"} reviewed in total</span></p></div>
+        <p class="hint">${n >= LIMIT ? `Daily limit reached. New reviews open at midnight (${C().tzLabel} time).` : `${LIMIT - n} review${LIMIT - n === 1 ? "" : "s"} left today.`}</p>
+        <p style="margin-top:12px"><a class="btn sm" href="#hotels" ${n >= LIMIT ? 'aria-disabled="true"' : ""}>Review a hotel</a></p></div>
       <div class="card"><header><h3>Earnings, last 7 days (${cur()})</h3></header>${chart()}</div>
     </div>
     <div class="grid g2" style="margin-top:16px">
