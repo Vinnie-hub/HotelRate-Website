@@ -1,7 +1,7 @@
 (function () {
   "use strict";
   /* HotelRate reviewer dashboard. Frontend-only: everything lives in LocalStorage. */
-  const KEY = "hotelrate.dashboard.v1", LIMIT = 5, WD_MS = 120000, REVIEW_MS = 300000;
+  const KEY = "hotelrate.dashboard.v1", LIMIT = 3, WD_MS = 120000, REVIEW_MS = 300000;
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const $ = (s) => document.querySelector(s);
   const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
@@ -64,7 +64,9 @@
   applyCountry(S.profile.country);
   let toastOk = true;
   function save() { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) { if (toastOk) { toastOk = false; toast("Browser storage is unavailable, so progress will not persist.", "bad"); } } }
-  function daily() { if (S.daily.day !== today()) { S.daily = { day: today(), count: 0 }; save(); } return S.reviews.filter((r) => r.day === today() && r.status !== "Rejected").length; }
+  function daily() { if (S.daily.day !== today()) { S.daily = { day: today(), count: 0 }; save(); } return new Set(S.reviews.filter((r) => r.day === today()).map((r) => r.hotel)).size; }
+  /* A hotel already counted today (e.g. a rejected review) can still be edited and resubmitted without using another slot */
+  const canSubmit = (name) => daily() < LIMIT || S.reviews.some((r) => r.hotel === name && r.day === today());
   const verified = () => S.reviews.filter((r) => r.status === "Verified").length;
   function wallet() {
     let earned = 0, pw = 0, withdrawn = 0;
@@ -198,7 +200,7 @@
 
   const F = { q: "", sort: "reward", cat: "all" };
   function hotelCard(h) {
-    const st = S.hotels[h.name], mine = S.reviews.find((r) => r.hotel === h.name), cap = daily() >= LIMIT;
+    const st = S.hotels[h.name], mine = S.reviews.find((r) => r.hotel === h.name), cap = !canSubmit(h.name);
     const btn = mine && mine.status === "Verified" ? `<span class="btn block" aria-disabled="true">Reviewed</span>` : mine && mine.status === "Verifying" ? `<span class="btn block" aria-disabled="true">Under verification</span>` : cap ? `<span class="btn block" aria-disabled="true">Daily limit reached</span>` : `<a class="btn block" href="#review/${h.id}">${mine ? "Write again" : S.drafts[h.name] ? "Continue draft" : "Review hotel"}</a>`;
     return `<article class="card hcard"><div class="media"><img src="${h.img}" alt="${esc(h.name)}, ${esc(h.city)}" loading="lazy" width="800" height="533"><span class="chip">${h.flag} ${esc(h.city)}</span><span class="chip r">${usd(h.pay)}</span></div>
     <div class="hbody"><div class="meta"><span class="tag">${esc(h.cat)}</span><span title="Average rating">${stars(st.rating)} ${st.rating.toFixed(1)}</span></div>
@@ -219,7 +221,7 @@
     return `<div class="toolbar"><input id="hq" type="search" placeholder="Search hotels, cities or descriptions" aria-label="Search hotels" value="${esc(F.q)}">
       <select id="hcat" aria-label="Category">${opt("all", "All categories", F.cat)}${cats.map((c) => opt(c, c, F.cat)).join("")}</select>
       <select id="hsort" aria-label="Sort hotels">${opt("reward", "Highest reward", F.sort)}${opt("low", "Lowest reward", F.sort)}${opt("reviews", "Most reviews", F.sort)}${opt("rating", "Top rated", F.sort)}${opt("name", "Name A–Z", F.sort)}</select></div>
-    <div class="alert info">You have used ${daily()} of ${LIMIT} reviews today. Rewards are paid in ${cur()} at $1 = ${cur()} ${num(rate())}.</div>
+    <div class="alert info">You have used ${daily()} of ${LIMIT} reviews today.</div>
     <div class="grid g3" id="hgrid">${hotelList()}</div>
 `;
   }
@@ -234,7 +236,7 @@
     if (mine && mine.status !== "Rejected") return `<div class="card empty"><b>${mine.status === "Verified" ? "You already reviewed " + esc(h.name) : "Your review of " + esc(h.name) + " is being verified"}</b>Each hotel can be reviewed once.<p style="margin-top:12px"><a class="btn" href="#reviews">See my reviews</a></p></div>`;
     if (!D || D.id !== id) D = { id, ...(S.drafts[h.name] || (mine ? { ratings: { ...mine.ratings }, title: mine.title, text: mine.text } : { ratings: {}, title: "", text: "" })) };
     const rows = CRIT.map(([k, t]) => `<div class="rate-row"><span id="l-${k}">${t}</span><div class="rstars" role="radiogroup" aria-labelledby="l-${k}">${[1, 2, 3, 4, 5].map((v) => `<button type="button" role="radio" data-a="star" data-k="${k}" data-v="${v}" aria-checked="${D.ratings[k] === v}" aria-label="${v} star${v > 1 ? "s" : ""}" class="${v <= (D.ratings[k] || 0) ? "on" : ""}">${STAR}</button>`).join("")}</div></div>`).join("");
-    const capped = daily() >= LIMIT;
+    const capped = !canSubmit(h.name);
     return `<p style="margin:0 0 6px"><a href="#hotels" class="hint" style="display:inline-block;padding:8px 0">← Back to hotels</a></p>
     <div class="rwrap"><form class="card" id="rf" novalidate>
       ${capped ? `<div class="alert warn">You've reached today's limit of ${LIMIT} reviews. You can save a draft and submit tomorrow.</div>` : ""}
@@ -262,7 +264,7 @@
   }
   function submitReview() {
     readDraft(); const h = H[D.id], errs = [];
-    if (daily() >= LIMIT) errs.push(`You've used all ${LIMIT} reviews for today. Come back after midnight (${C().tzLabel} time).`);
+    if (!canSubmit(h.name)) errs.push(`You've used all ${LIMIT} reviews for today. Come back after midnight (${C().tzLabel} time).`);
     if (S.reviews.some((r) => r.hotel === h.name && r.status !== "Rejected")) errs.push("You have already submitted a review for this hotel.");
     if (CRIT.some(([k]) => !D.ratings[k])) errs.push("Give a star rating for every category.");
     if (D.title.trim().length < 5) errs.push("Add a review title of at least 5 characters.");
@@ -307,7 +309,7 @@
     const w = wallet(), rows = S.tx.filter((t) => t.type === "reward"), min = S.minWd;
     const pct = Math.min(100, Math.round((w.avail / min) * 100)), can = w.avail >= min;
     const avg = rows.length ? rnd(w.earned / rows.length) : 0, wdn = S.tx.filter((t) => t.type === "withdrawal" && t.status === "Pending").length;
-    const hero = `<div class="card wal-hero"><div class="wh-main"><small>Available balance</small><b>${money(w.avail)}</b><span class="wh-usd">≈ ${usd(w.avail / rate())} · $1 = ${cur()} ${num(rate())}</span>
+    const hero = `<div class="card wal-hero"><div class="wh-main"><small>Available balance</small><b>${money(w.avail)}</b><span class="wh-usd">≈ ${usd(w.avail / rate())}</span>
         <div class="wh-prog"><div class="vp" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${pct}" aria-label="Progress to minimum withdrawal"><i style="width:${pct}%"></i></div>
         <small>${can ? `You can withdraw now. Minimum is ${money(min)}.` : (w.avail > 0 ? `${money(rnd(min - w.avail))} more to reach the ${money(min)} minimum withdrawal.` : `Earn ${money(min)} to unlock withdrawals.`)}</small></div></div>
       <div class="wh-act"><a class="btn" href="#withdrawals" ${can ? "" : 'aria-disabled="true"'}>Withdraw funds</a><a class="btn sec" href="#hotels">Earn more</a></div></div>`;
