@@ -1,6 +1,6 @@
 (function () {
   "use strict";
-  /* HotelRate reviewer dashboard. Frontend-only: everything lives in LocalStorage. */
+  /* HotelRate reviewer dashboard: everything lives in LocalStorage. */
   const KEY = "hotelrate.dashboard.v1", LIMIT = 3, WD_MS = 120000, REVIEW_MS = 300000;
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const $ = (s) => document.querySelector(s);
