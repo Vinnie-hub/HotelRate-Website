@@ -1,7 +1,8 @@
 (function () {
   "use strict";
-  /* HotelRate reviewer dashboard: everything lives in LocalStorage. */
-  const KEY = "hotelrate.dashboard.v1", LIMIT = 3, WD_MS = 120000, REVIEW_MS = 300000;
+  /* HotelRate reviewer dashboard. Frontend-only: everything lives in LocalStorage. */
+  const KEY = "hotelrate.dashboard.v1", LIMIT = 3, WD_MS = 120000, REVIEW_MS = 300000, MIN_REFERRALS = 3;
+  const WD_WARNING = "To qualify for withdrawals, you must have at least 3 successful referrals.";
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const $ = (s) => document.querySelector(s);
   const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
@@ -38,7 +39,7 @@
   const hotelLocal = (h) => rnd((h.cents * rate()) / 100);
 
   /* ---------- State ---------- */
-  const defaults = () => ({ profile: { name: "", email: "", phone: "", country: "" }, rates: { ...DEFAULT_RATES }, minWd: 500, hotels: {}, reviews: [], drafts: {}, tx: [], daily: { day: today(), count: 0 } });
+  const defaults = () => ({ profile: { name: "", email: "", phone: "", country: "" }, rates: { ...DEFAULT_RATES }, minWd: 500, hotels: {}, reviews: [], drafts: {}, tx: [], referrals: 0, daily: { day: today(), count: 0 } });
   function load() {
     let s = null;
     try { s = JSON.parse(localStorage.getItem(KEY)); } catch (e) { s = null; }
@@ -68,6 +69,11 @@
   /* A hotel already counted today (e.g. a rejected review) can still be edited and resubmitted without using another slot */
   const canSubmit = (name) => daily() < LIMIT || S.reviews.some((r) => r.hotel === name && r.day === today());
   const verified = () => S.reviews.filter((r) => r.status === "Verified").length;
+  /* Withdrawals are locked until the user has MIN_REFERRALS successful referrals */
+  const refCount = () => Math.max(0, Math.floor(Number(S.referrals) || 0));
+  const canWithdraw = () => refCount() >= MIN_REFERRALS;
+  let refNoteOff = false; /* closed with the X for this visit; returns on reload */
+  const refNote = () => canWithdraw() || refNoteOff ? "" : `<div class="alert info refnote" role="note"><span>Invite 3 people using your referral link to unlock withdrawals.</span><button type="button" class="xbtn" data-a="closeref" aria-label="Close note">&times;</button></div>`;
   function wallet() {
     let earned = 0, pw = 0, withdrawn = 0;
     S.tx.forEach((t) => {
@@ -157,6 +163,16 @@
       };
       d.oncancel = () => res(false);
       d.showModal();
+    });
+  }
+  function alertDlg({ title, body, ok = "OK", alt = null }) {
+    return new Promise((res) => {
+      const d = $("#dlg");
+      d.innerHTML = `<div class="proc warnbox" role="alertdialog" aria-live="assertive"><div class="warnic" aria-hidden="true">!</div><h3>${esc(title)}</h3><p>${body}</p><div class="dact">${alt ? `<button class="btn" value="alt">${esc(alt)}</button>` : ""}<button class="btn ${alt ? "sec" : "block"}" value="ok">${esc(ok)}</button></div></div>`;
+      const done = (v) => { d.onclick = null; d.oncancel = null; d.close(); res(v); };
+      d.onclick = (e) => { const b = e.target.closest("button"); if (b) done(b.value); };
+      d.oncancel = (e) => { e.preventDefault(); done("ok"); };
+      if (!d.open) d.showModal();
     });
   }
   const maskPhone = (p) => "+" + p.slice(0, 5) + "****" + p.slice(-3);
@@ -314,14 +330,14 @@
         <small>${can ? `You can withdraw now. Minimum is ${money(min)}.` : (w.avail > 0 ? `${money(rnd(min - w.avail))} more to reach the ${money(min)} minimum withdrawal.` : `Earn ${money(min)} to unlock withdrawals.`)}</small></div></div>
       <div class="wh-act"><a class="btn" href="#withdrawals" ${can ? "" : 'aria-disabled="true"'}>Withdraw funds</a><a class="btn sec" href="#hotels">Earn more</a></div></div>`;
     const mini = (l, v, sub) => `<div class="card stat"><small>${l}</small><b>${v}</b><span>${sub}</span></div>`;
-    return `${hero}<div class="grid g3s" style="margin-top:16px">${mini("Total earnings", money(w.earned), `${rows.length} verified review${rows.length === 1 ? "" : "s"}${rows.length ? " · avg " + money(avg) : ""}`)}${mini("Pending earnings", money(w.pending), "Rewards under verification")}${mini("Total withdrawn", money(w.withdrawn), wdn ? `${wdn} payout${wdn > 1 ? "s" : ""} processing` : "Paid out successfully")}</div>
+    return `${refNote()}${hero}<div class="grid g3s" style="margin-top:16px">${mini("Total earnings", money(w.earned), `${rows.length} verified review${rows.length === 1 ? "" : "s"}${rows.length ? " · avg " + money(avg) : ""}`)}${mini("Pending earnings", money(w.pending), "Rewards under verification")}${mini("Total withdrawn", money(w.withdrawn), wdn ? `${wdn} payout${wdn > 1 ? "s" : ""} processing` : "Paid out successfully")}</div>
     <div class="card" style="margin-top:16px"><header><h3>Earnings history</h3><span class="hint">${rows.length} reward${rows.length === 1 ? "" : "s"} · ${money(w.earned)} total</span></header>
     ${rows.length ? `<div class="scroll"><table class="tbl"><thead><tr><th>Date</th><th>Hotel</th><th class="n hide-s">Reward</th><th class="n">${cur()}</th></tr></thead><tbody>${rows.map((t) => `<tr><td class="d">${fmtDate(t.date)}</td><td class="x">${esc(t.desc.replace("Review reward: ", ""))}</td><td class="n hide-s">${usd(t.usd)} <small style="color:var(--mute)">@ ${num(t.rate)}</small></td><td class="n pos">+${money(t.amount)}</td></tr>`).join("")}</tbody></table></div>` : `<div class="empty"><b>No earnings yet</b>Submit a review to earn your first reward.<p style="margin-top:12px"><a class="btn sm" href="#hotels">Browse hotels</a></p></div>`}</div>`;
   }
 
   function vWithdrawals() {
     const w = wallet(), wd = S.tx.filter((t) => t.type === "withdrawal");
-    return `<div class="grid g2"><form class="card" id="wf" novalidate><h2 style="margin-bottom:4px">Request withdrawal</h2><p class="hint" style="margin-bottom:14px">Available: <b>${money(w.avail)}</b> · Minimum: <b>${money(S.minWd)}</b></p>
+    return `${refNote()}<div class="grid g2"><form class="card" id="wf" novalidate><h2 style="margin-bottom:4px">Request withdrawal</h2><p class="hint" style="margin-bottom:14px">Available: <b>${money(w.avail)}</b> · Minimum: <b>${money(S.minWd)}</b></p>
       <div class="f"><label for="wm">Payout method</label><select id="wm">${C().methods.map((m) => `<option>${esc(m)}</option>`).join("")}</select></div>
       <div class="f"><label for="wp">Mobile money number</label><input id="wp" inputmode="tel" placeholder="${C().ph}" value="${esc(S.profile.phone)}" autocomplete="tel"></div>
       <div class="f"><label for="wa">Amount (${cur()})</label><input id="wa" type="number" inputmode="decimal" min="${S.minWd}" step="1" placeholder="${S.minWd}"><p class="hint"><button type="button" class="btn sec sm" data-a="max">Withdraw all</button></p></div>
@@ -349,7 +365,7 @@
     <div class="grid"><form class="card" id="cf" novalidate><h2 style="margin-bottom:6px">Country & currency</h2><p class="hint" style="margin-bottom:14px">Your wallet, payout methods and daily reset time follow your country. Changing country converts your balance at the rates below.</p>
       <div class="f"><label for="cc">Country</label><select id="cc">${Object.entries(COUNTRIES).map(([k, c]) => `<option value="${k}" ${k === CC ? "selected" : ""}>${c.flag} ${c.name} (${c.cur})</option>`).join("")}</select></div>
       <label style="margin-bottom:8px">Exchange rates ($1 =)</label><div class="fields">${Object.entries(COUNTRIES).map(([, c]) => `<div class="f"><label for="rt-${c.cur}" style="font-weight:500">${c.cur}</label><input id="rt-${c.cur}" type="number" step="any" min="0.01" value="${S.rates[c.cur]}"></div>`).join("")}</div>
-      <p class="hint" style="margin:-4px 0 12px">Indicative demo rates. A new rate applies to future reviews only.</p>
+      <p class="hint" style="margin:-4px 0 12px">A new rate applies to future reviews only.</p>
       <div class="f"><label for="pm">Minimum withdrawal (${cur()})</label><input id="pm" type="number" step="any" min="0.01" value="${S.minWd}"></div>
       <div id="cerr" class="err" role="alert"></div><div class="abar2"><button class="btn" type="submit">Save</button><button class="btn sec" type="button" data-a="rates-reset">Restore default rates</button></div></form>
     <div class="card"><h3 style="margin-bottom:8px">Reset my data</h3><p class="hint" style="margin-bottom:12px">Clears your profile, reviews, drafts, wallet, transactions, withdrawals and daily progress, and generates fresh hotel review counts.</p><button class="btn danger" data-a="reset">Reset my data</button></div></div></div>`;
@@ -408,6 +424,7 @@
     } else if (a === "more") { const p = b.previousElementSibling, open = p.classList.toggle("clamp") === false; b.textContent = open ? "Read less" : "Read more"; b.setAttribute("aria-expanded", String(open)); }
     else if (a === "draft") saveDraft();
     else if (a === "rates-reset") { Object.entries(DEFAULT_RATES).forEach(([k, v]) => { $("#rt-" + k).value = v; }); toast("Default rates restored. Press Save to apply.", "ok"); }
+    else if (a === "closeref") { refNoteOff = true; render(); }
     else if (a === "max") { $("#wa").value = Math.floor(wallet().avail); }
     else if (a === "cancel") {
       const t = S.tx.find((x) => x.id === b.dataset.id); if (!t || t.status !== "Pending") return;
@@ -434,6 +451,16 @@
       $("#werr").innerHTML = errs.map((x) => "• " + esc(x)).join("<br>");
       if (errs.length) return toast(errs[0], "bad");
       if (!(await confirmDlg({ title: "Confirm withdrawal request", body: `Request <b>${money(amt)}</b> to ${esc(method)} <b>${esc(maskPhone(phone))}</b>? The amount leaves your balance now and the payment is sent to your ${esc(method)} shortly. `, ok: "Confirm request" }))) return;
+      if (!canWithdraw()) { /* processing loader, then the referral warning; no withdrawal is created */
+        const d = $("#dlg");
+        d.onclick = null; d.oncancel = (ev) => ev.preventDefault();
+        d.innerHTML = `<div class="proc" role="status"><div class="spin" aria-hidden="true"></div><h3>Processing your withdrawal…</h3><p>Please wait.</p><div class="bar"><i></i></div></div>`;
+        d.showModal();
+        await sleep(2500);
+        const go = await alertDlg({ title: "Withdrawal not allowed", body: esc(WD_WARNING) + ` You currently have ${refCount()} of ${MIN_REFERRALS}.`, ok: "Close", alt: "Review hotels" });
+        if (go === "alt") location.hash = "#hotels";
+        return;
+      }
       const r = ref("WD");
       S.tx.unshift({ id: ref("T"), ref: r, type: "withdrawal", desc: method + " withdrawal", method, amount: amt, phone, date: new Date().toISOString(), due: Date.now() + WD_MS, status: "Pending" });
       save(); render(); toast(`Request ${r} received. Payment is processing.`, "ok");

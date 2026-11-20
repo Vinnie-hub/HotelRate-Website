@@ -1,4 +1,4 @@
-const CACHE_NAME = "hotelrate-app-v17";
+const CACHE_NAME = "hotelrate-app-v20";
 
 const FILES_TO_CACHE = [
   "./",

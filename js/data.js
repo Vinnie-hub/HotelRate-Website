@@ -1,4 +1,4 @@
-/* HOTEL LISTINGS: they show the kind of hotels on offer. Edit freely.
+/* SAMPLE LISTINGS: they show the kind of hotels on offer. Edit freely.
    Hotel images live in /assets as "hotel 1.webp" ... "hotel 20.webp" */
 const IMG = (n) => `assets/hotel%20${n}.webp`;
 
